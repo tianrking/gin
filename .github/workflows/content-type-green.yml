@@ -1,7 +1,11 @@
 name: Gin Content-Type exact native quality
 on:
-  push:
-    branches: [codex/validate-content-type-original]
+  workflow_dispatch:
+    inputs:
+      scope:
+        type: choice
+        options: [all, lint]
+        default: all
 permissions:
   contents: read
 env:
@@ -9,6 +13,7 @@ env:
   GOMAXPROCS: '2'
 jobs:
   native:
+    if: inputs.scope != 'lint'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -105,9 +110,15 @@ jobs:
           echo "FULL_FMT_EXIT=$fmt_code BASELINE_FMT_EXIT=$baseline_fmt_code"
           test "$fmt_code" -eq "$baseline_fmt_code"
           diff -u /tmp/gin-baseline-fmt.log /tmp/gin-full-fmt.log
+          set +e
           /tmp/gin-tools/golangci-lint fmt --diff . > /tmp/gin-format.diff
+          lint_fmt_code=$?
           (cd /tmp/gin-lint-baseline && /tmp/gin-tools/golangci-lint fmt --diff .) > /tmp/gin-baseline-format.diff
+          baseline_lint_fmt_code=$?
+          set -e
           cat /tmp/gin-format.diff
+          echo "LINT_FMT_EXIT=$lint_fmt_code BASELINE_LINT_FMT_EXIT=$baseline_lint_fmt_code"
+          test "$lint_fmt_code" -eq "$baseline_lint_fmt_code"
           diff -u /tmp/gin-baseline-format.diff /tmp/gin-format.diff
           gofmt -s -d render/render.go render/render_test.go context_test.go > /tmp/gin-changed-gofmt.diff
           test ! -s /tmp/gin-changed-gofmt.diff
