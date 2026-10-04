@@ -4,7 +4,7 @@ on:
     inputs:
       scope:
         type: choice
-        options: [all, lint, native]
+        options: [all, lint, native, baseline-lint]
         default: all
 permissions:
   contents: read
@@ -13,7 +13,7 @@ env:
   GOMAXPROCS: '2'
 jobs:
   native:
-    if: inputs.scope != 'lint'
+    if: inputs.scope == 'all' || inputs.scope == 'native'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -74,7 +74,7 @@ jobs:
           test -z "$(git status --porcelain)"
           git hash-object render/render.go render/render_test.go context_test.go
   lint:
-    if: inputs.scope != 'native'
+    if: inputs.scope == 'all' || inputs.scope == 'lint'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -128,3 +128,34 @@ jobs:
           /tmp/gin-tools/golangci-lint run --verbose
           test -z "$(git status --porcelain)"
           git hash-object render/render.go render/render_test.go context_test.go
+  baseline-lint-127:
+    if: inputs.scope == 'baseline-lint'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 43fe48e8a0f44af783116cdb010725e6bb50255f
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Verify unmodified baseline and build pinned lint version
+        run: |
+          test "$(git rev-parse HEAD)" = '43fe48e8a0f44af783116cdb010725e6bb50255f'
+          git hash-object render/render.go render/render_test.go context_test.go
+          go version
+          GOBIN=/tmp/gin-tools go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.0
+          go version -m /tmp/gin-tools/golangci-lint
+      - name: Preserve raw baseline lint incompatibility
+        run: |
+          go mod download
+          set +e
+          /tmp/gin-tools/golangci-lint run --verbose > /tmp/gin-baseline-lint.log 2>&1
+          lint_code=$?
+          set -e
+          cat /tmp/gin-baseline-lint.log
+          echo "BASELINE_LINT_EXIT=$lint_code"
+          test "$lint_code" -ne 0
+          grep -q 'export data version 4 is greater than maximum supported version 2' /tmp/gin-baseline-lint.log
+          test -z "$(git status --porcelain)"
