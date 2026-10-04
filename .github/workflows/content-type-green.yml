@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 env:
-  FORMAL_SHA: 82d56ca0122d243447170b3e2ca635f334fe3d30
+  FORMAL_SHA: 73655e2d6e9ea9975b7a2f6616a0a3ad47f53e67
   GOMAXPROCS: '2'
 jobs:
   native:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 82d56ca0122d243447170b3e2ca635f334fe3d30
+          ref: 73655e2d6e9ea9975b7a2f6616a0a3ad47f53e67
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@v7
@@ -42,7 +42,9 @@ jobs:
           git worktree add --detach /tmp/gin-benchmark-baseline 43fe48e8a0f44af783116cdb010725e6bb50255f
           (cd /tmp/gin-benchmark-baseline && go test . -run '^$' -bench '^BenchmarkOneRouteJSON$' -benchmem -count=3)
       - name: Full project tests and coverage
-        run: go test -p 2 -count=1 -coverprofile=/tmp/gin-coverage.out ./...
+        run: |
+          go test -p 2 -count=1 -coverprofile=/tmp/gin-coverage.out ./...
+          go tool cover -func=/tmp/gin-coverage.out | grep -E 'writeContentType|total:'
       - name: Full project race tests
         run: go test -p 2 -race -count=1 ./...
       - name: Full project tests for configured alternate codecs
@@ -64,7 +66,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 82d56ca0122d243447170b3e2ca635f334fe3d30
+          ref: 73655e2d6e9ea9975b7a2f6616a0a3ad47f53e67
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
@@ -81,7 +84,18 @@ jobs:
           /tmp/gin-tools/golangci-lint version
       - name: Exact source formatting and complete repository lint
         run: |
-          make fmt-check
+          go mod download
+          git worktree add --detach /tmp/gin-lint-baseline 43fe48e8a0f44af783116cdb010725e6bb50255f
+          set +e
+          make fmt-check > /tmp/gin-full-fmt.log 2>&1
+          fmt_code=$?
+          (cd /tmp/gin-lint-baseline && make fmt-check) > /tmp/gin-baseline-fmt.log 2>&1
+          baseline_fmt_code=$?
+          set -e
+          cat /tmp/gin-full-fmt.log
+          echo "FULL_FMT_EXIT=$fmt_code BASELINE_FMT_EXIT=$baseline_fmt_code"
+          test "$fmt_code" -eq "$baseline_fmt_code"
+          diff -u /tmp/gin-baseline-fmt.log /tmp/gin-full-fmt.log
           /tmp/gin-tools/golangci-lint fmt --diff render/render.go render/render_test.go context_test.go > /tmp/gin-format.diff
           cat /tmp/gin-format.diff
           test ! -s /tmp/gin-format.diff
