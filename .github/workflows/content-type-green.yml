@@ -47,6 +47,15 @@ jobs:
           go tool cover -func=/tmp/gin-coverage.out | grep -E 'writeContentType|total:'
       - name: Full project race tests
         run: go test -p 2 -race -count=1 ./...
+      - name: Inspect unchanged baseline H2c race fixture
+        if: always()
+        run: |
+          set +e
+          (cd /tmp/gin-benchmark-baseline && go test -race -count=100 -run '^TestH2c$' .) > /tmp/gin-baseline-h2c-race.log 2>&1
+          baseline_race_code=$?
+          set -e
+          cat /tmp/gin-baseline-h2c-race.log
+          echo "BASELINE_H2C_RACE_EXIT=$baseline_race_code"
       - name: Full project tests for configured alternate codecs
         run: |
           go test -p 2 -count=1 -tags nomsgpack ./...
@@ -96,9 +105,12 @@ jobs:
           echo "FULL_FMT_EXIT=$fmt_code BASELINE_FMT_EXIT=$baseline_fmt_code"
           test "$fmt_code" -eq "$baseline_fmt_code"
           diff -u /tmp/gin-baseline-fmt.log /tmp/gin-full-fmt.log
-          /tmp/gin-tools/golangci-lint fmt --diff render/render.go render/render_test.go context_test.go > /tmp/gin-format.diff
+          /tmp/gin-tools/golangci-lint fmt --diff . > /tmp/gin-format.diff
+          (cd /tmp/gin-lint-baseline && /tmp/gin-tools/golangci-lint fmt --diff .) > /tmp/gin-baseline-format.diff
           cat /tmp/gin-format.diff
-          test ! -s /tmp/gin-format.diff
+          diff -u /tmp/gin-baseline-format.diff /tmp/gin-format.diff
+          gofmt -s -d render/render.go render/render_test.go context_test.go > /tmp/gin-changed-gofmt.diff
+          test ! -s /tmp/gin-changed-gofmt.diff
           /tmp/gin-tools/golangci-lint run --verbose
           test -z "$(git status --porcelain)"
           git hash-object render/render.go render/render_test.go context_test.go
