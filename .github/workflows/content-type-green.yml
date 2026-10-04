@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 env:
-  FORMAL_SHA: bdf3f9ce994ef6e0ca8554732ebd739d5df81941
+  FORMAL_SHA: 82d56ca0122d243447170b3e2ca635f334fe3d30
   GOMAXPROCS: '2'
 jobs:
   native:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: bdf3f9ce994ef6e0ca8554732ebd739d5df81941
+          ref: 82d56ca0122d243447170b3e2ca635f334fe3d30
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@v7
@@ -38,6 +38,9 @@ jobs:
           go test -count=1 -v ./render -run '^TestContentType.*Probe$'
           go test ./render -run '^$' -bench '^BenchmarkContentTypeHeaderIsolation$' -benchmem -count=3
           rm render/content_type_probe_test.go
+          go test . -run '^$' -bench '^BenchmarkOneRouteJSON$' -benchmem -count=3
+          git worktree add --detach /tmp/gin-benchmark-baseline 43fe48e8a0f44af783116cdb010725e6bb50255f
+          (cd /tmp/gin-benchmark-baseline && go test . -run '^$' -bench '^BenchmarkOneRouteJSON$' -benchmem -count=3)
       - name: Full project tests and coverage
         run: go test -p 2 -count=1 -coverprofile=/tmp/gin-coverage.out ./...
       - name: Full project race tests
@@ -54,30 +57,34 @@ jobs:
           git hash-object render/render.go render/render_test.go context_test.go
   lint:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.26.x', '1.27.x']
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: bdf3f9ce994ef6e0ca8554732ebd739d5df81941
+          ref: 82d56ca0122d243447170b3e2ca635f334fe3d30
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.27.x'
+          go-version: ${{ matrix.go }}
           cache: false
       - name: Install repository configured lint version
         run: |
           curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/v2.11.0/install.sh -o /tmp/install-golangci.sh
           sh /tmp/install-golangci.sh -b /tmp/gin-tools v2.11.0
+          if test '${{ matrix.go }}' = '1.27.x'; then
+            GOBIN=/tmp/gin-tools go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.0
+            go version -m /tmp/gin-tools/golangci-lint
+          fi
           /tmp/gin-tools/golangci-lint version
-      - name: Generate formatting artifact and show current lint diagnostics
+      - name: Exact source formatting and complete repository lint
         run: |
-          /tmp/gin-tools/golangci-lint fmt
-          git diff --stat
+          make fmt-check
+          /tmp/gin-tools/golangci-lint fmt --diff render/render.go render/render_test.go context_test.go > /tmp/gin-format.diff
+          cat /tmp/gin-format.diff
+          test ! -s /tmp/gin-format.diff
           /tmp/gin-tools/golangci-lint run --verbose
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: gin-formatted-source
-          path: |
-            render/render.go
-            render/render_test.go
-            context_test.go
+          test -z "$(git status --porcelain)"
+          git hash-object render/render.go render/render_test.go context_test.go

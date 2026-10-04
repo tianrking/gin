@@ -1,7 +1,6 @@
 name: Gin Content-Type original native proof
 on:
-  push:
-    branches: [codex/validate-content-type-original]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
