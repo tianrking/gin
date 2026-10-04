@@ -4,7 +4,7 @@ on:
     inputs:
       scope:
         type: choice
-        options: [all, lint]
+        options: [all, lint, native]
         default: all
 permissions:
   contents: read
@@ -50,6 +50,16 @@ jobs:
         run: |
           go test -p 2 -count=1 -coverprofile=/tmp/gin-coverage.out ./...
           go tool cover -func=/tmp/gin-coverage.out | grep -E 'writeContentType|total:'
+      - name: Full project tests for configured alternate codecs
+        run: |
+          go test -p 2 -count=1 -tags nomsgpack ./...
+          go test -p 2 -count=1 -tags go_json ./...
+          go test -p 2 -count=1 -tags sonic -ldflags='-checklinkname=0' ./...
+      - name: Full vet and source unchanged after tests
+        run: |
+          go vet -p 2 ./...
+          test -z "$(git status --porcelain)"
+          git hash-object render/render.go render/render_test.go context_test.go
       - name: Full project race tests
         run: go test -p 2 -race -count=1 ./...
       - name: Inspect unchanged baseline H2c race fixture
@@ -61,17 +71,10 @@ jobs:
           set -e
           cat /tmp/gin-baseline-h2c-race.log
           echo "BASELINE_H2C_RACE_EXIT=$baseline_race_code"
-      - name: Full project tests for configured alternate codecs
-        run: |
-          go test -p 2 -count=1 -tags nomsgpack ./...
-          go test -p 2 -count=1 -tags go_json ./...
-          go test -p 2 -count=1 -tags sonic -ldflags='-checklinkname=0' ./...
-      - name: Full vet and source unchanged after tests
-        run: |
-          go vet -p 2 ./...
           test -z "$(git status --porcelain)"
           git hash-object render/render.go render/render_test.go context_test.go
   lint:
+    if: inputs.scope != 'native'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
